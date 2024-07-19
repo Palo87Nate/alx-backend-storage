@@ -6,104 +6,41 @@ import requests
 from functools import wraps
 from typing import Callable
 
-#!/usr/bin/env python3
-"""
-Caching request module
-"""
-import redis
-import requests
-from functools import wraps
-from typing import Callable
-
-
-def track_get_page(fn: Callable) -> Callable:
-    """ Decorator for get_page
-    """
-    @wraps(fn)
-    def wrapper(url: str) -> str:
-        """ Wrapper that:
-            - check whether a url's data is cached
-            - tracks how many times get_page is called
-        """
-        client = redis.Redis()
-        client.incr(f'count:{url}')
-        cached_page = client.get(f'{url}')
-        if cached_page:
-            return cached_page.decode('utf-8')
-        response = fn(url)
-        client.set(f'{url}', response, 10)
-        return response
-    return wrapper
-
-
-@track_get_page
-def get_page(url: str) -> str:
-    """ Makes a http request to a given endpoint
-    """
-    response = requests.get(url)
-    return response.text
+# Create a Redis client
 redis_store = redis.Redis()
-'''The module-level Redis instance.
-'''
-
 
 def data_cacher(method: Callable) -> Callable:
-    '''Caches the output of fetched data.
+    '''Caches the output of fetched data and tracks access counts.
     '''
     @wraps(method)
-    def invoker(url) -> str:
-        '''The wrapper function for caching the output.
+    def invoker(url: str) -> str:
+        '''The wrapper function for caching the output and tracking access counts.
         '''
+        # Increment the count for the URL
         redis_store.incr(f'count:{url}')
-        result = redis_store.get(f'result:{url}')
-        if result:
-            return result.decode('utf-8')
+        
+        # Check if the URL's data is cached
+        cached_page = redis_store.get(f'result:{url}')
+        if cached_page:
+            return cached_page.decode('utf-8')
+        
+        # Fetch the URL data and cache it with expiration
         result = method(url)
-        redis_store.set(f'count:{url}', 0)
         redis_store.setex(f'result:{url}', 10, result)
         return result
     return invoker
 
-
 @data_cacher
 def get_page(url: str) -> str:
-    '''Returns the content of a URL after caching the request's response,
+    '''Returns the content of a URL after caching the request's response
     and tracking the request.
     '''
-    return requests.get(url).text
-#!/usr/bin/env python3
-"""
-Caching request module
-"""
-import redis
-import requests
-from functools import wraps
-from typing import Callable
-
-
-def track_get_page(fn: Callable) -> Callable:
-    """ Decorator for get_page
-    """
-    @wraps(fn)
-    def wrapper(url: str) -> str:
-        """ Wrapper that:
-            - check whether a url's data is cached
-            - tracks how many times get_page is called
-        """
-        client = redis.Redis()
-        client.incr(f'count:{url}')
-        cached_page = client.get(f'{url}')
-        if cached_page:
-            return cached_page.decode('utf-8')
-        response = fn(url)
-        client.set(f'{url}', response, 10)
-        return response
-    return wrapper
-
-
-@track_get_page
-def get_page(url: str) -> str:
-    """ Makes a http request to a given endpoint
-    """
     response = requests.get(url)
     return response.text
+
+# Test the caching and tracking
+if __name__ == "__main__":
+    test_url = "http://slowwly.robertomurray.co.uk"
+    print(get_page(test_url))
+    print(get_page(test_url))  # Should use the cached result
+    print(f"Access count for {test_url}: {redis_store.get(f'count:{test_url}').decode('utf-8')}")
